@@ -31,7 +31,7 @@ const facultyMap = {
     'SAK': 'Ms.Shahin Akter', 'MZC': 'Ms. Maliha Zahan Chowdhury',
     'TAS': 'Ms. Tahmina Akter Sumi', 'JNM': 'Ms. Tanjum Motin Mitul',
     'UDD': 'Mr. Udoy Das', 'RHN': 'Mr. Riad Hossain', 'MSR': 'Mr. Md. Sajeed-Ur-Rahman',
-    'AKS': 'Mr. Mohammad Akbar Bin Shah', 'RSN': 'Rajarshi Sen'
+    'AKS': 'Mr. Mohammad Akbar Bin Shah', 'RSN': 'Rajarshi Sen', 'LAM': 'Lamiya Anjum'
 };
 
 // --- EVENT LISTENERS ---
@@ -249,24 +249,32 @@ function findSectionRoutine(courses, department) {
     let currentDay = '';
     let theoryTimeSlots = [];
     let labTimeSlots = [];
+    let inLabSection = false; // Flag to determine if we are in the lab part of the schedule
     const daysOfWeek = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const labCourses = ['CSE320', 'CSE112', 'CSE124', 'CSE212', 'CSE216', 'CSE222', 'CSE226', 'CSE312', 'CSE316', 'CSE328', 'CSE342', 'PHY102', 'EEE112', 'EEE214', 'EEE218', 'EEE312', 'ME102', 'ENG112', 'CSE114'];
 
     masterRoutine.forEach((row, index) => {
         const firstCell = row[0] ? row[0].trim() : '';
+        
         if (daysOfWeek.includes(firstCell)) {
             currentDay = firstCell;
             theoryTimeSlots = masterRoutine[index + 1] || [];
             labTimeSlots = [];
+            inLabSection = false; // Reset for the new day
             return;
         }
         if (!currentDay) return;
+        
+        // This row indicates the start of the lab schedule for the current day
         if (firstCell === '' && row[1] && row[1].includes(':')) {
             labTimeSlots = row;
+            inLabSection = true; // Set the flag
             return;
         }
+        
         if (firstCell) {
             const room = firstCell;
+            const relevantTimeSlots = inLabSection ? labTimeSlots : theoryTimeSlots;
+
             for (let i = 1; i < row.length; i++) {
                 const cellContent = row[i];
                 if (cellContent) {
@@ -292,10 +300,6 @@ function findSectionRoutine(courses, department) {
                         }
                     }
                     
-                    const baseCourse = subject.replace(/\.\d+$/, '').replace(/\s/g, '');
-                    const isLabCourse = labCourses.some(lab => baseCourse === lab);
-                    const relevantTimeSlots = isLabCourse ? labTimeSlots : theoryTimeSlots;
-
                     routine.push({
                         day: currentDay,
                         time: relevantTimeSlots[i] || 'N/A',
