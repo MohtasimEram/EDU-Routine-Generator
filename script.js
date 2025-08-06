@@ -7,6 +7,9 @@ const semesterSelectEl = document.getElementById('semester-select');
 const departmentSelectEl = document.getElementById('department-select');
 const generateBtnEl = document.getElementById('generate-btn');
 const resultsContainerEl = document.getElementById('results-container');
+const loadingIndicatorEl = document.getElementById('loading-indicator');
+const placeholderTextEl = document.getElementById('placeholder-text');
+const linksContainerEl = document.getElementById('links-container');
 
 // --- STATE VARIABLES ---
 let masterRoutine = [];
@@ -31,7 +34,7 @@ const facultyMap = {
     'SAK': 'Ms.Shahin Akter', 'MZC': 'Ms. Maliha Zahan Chowdhury',
     'TAS': 'Ms. Tahmina Akter Sumi', 'JNM': 'Ms. Tanjum Motin Mitul',
     'UDD': 'Mr. Udoy Das', 'RHN': 'Mr. Riad Hossain', 'MSR': 'Mr. Md. Sajeed-Ur-Rahman',
-    'AKS': 'Mr. Mohammad Akbar Bin Shah', 'RSN': 'Rajarshi Sen', 'LAM': 'Lamiya Anjum'
+    'AKS': 'Mr. Mohammad Akbar Bin Shah', 'RSN': 'Rajarshi Sen', 'LAM': 'Lamiya Anjum', 'IM': 'Ishtiaque Mainuddin'
 };
 
 // --- EVENT LISTENERS ---
@@ -61,7 +64,18 @@ courseSearchEl.addEventListener('input', () => {
     if (query) {
         const suggestions = Array.from(availableCourses)
             .filter(course => course.toUpperCase().startsWith(query))
-            .sort() // Sort suggestions alphabetically
+            .sort((a, b) => {
+                const regex = /([A-Z]{2,4}\s*\d{3,4})\.?(\d+)?/;
+                const matchA = a.match(regex);
+                const matchB = b.match(regex);
+                if (!matchA || !matchB) return a.localeCompare(b);
+                const baseA = matchA[1];
+                const baseB = matchB[1];
+                if (baseA !== baseB) return baseA.localeCompare(baseB);
+                const sectionA = parseInt(matchA[2] || '0', 10);
+                const sectionB = parseInt(matchB[2] || '0', 10);
+                return sectionA - sectionB;
+            })
             .map(course => `<div class="p-2 hover:bg-gray-700 cursor-pointer" data-course="${course}">${course}</div>`)
             .join('');
         courseSuggestionsEl.innerHTML = suggestions;
@@ -106,49 +120,62 @@ generateBtnEl.addEventListener('click', () => {
         return;
     }
     
-    resultsContainerEl.innerHTML = '<p class="text-yellow-400 text-center">Generating... please wait.</p>';
+    // --- Start Loading State ---
+    placeholderTextEl.classList.add('hidden');
+    linksContainerEl.innerHTML = '';
+    loadingIndicatorEl.classList.remove('hidden');
+    generateBtnEl.disabled = true;
     
-    const semesterText = semesterSelectEl.options[semesterSelectEl.selectedIndex].text;
-    const department = departmentSelectEl.value;
-    
-    const specificSelections = [];
-    const generalSelections = [];
+    setTimeout(() => {
+        const semesterText = semesterSelectEl.options[semesterSelectEl.selectedIndex].text;
+        const department = departmentSelectEl.value;
+        
+        const specificSelections = [];
+        const generalSelections = [];
 
-    selectedCourses.forEach(course => {
-        if (course.includes('.')) {
-            specificSelections.push(course);
-        } else {
-            generalSelections.push(course);
+        selectedCourses.forEach(course => {
+            if (course.includes('.')) {
+                specificSelections.push(course);
+            } else {
+                generalSelections.push(course);
+            }
+        });
+
+        // Generate one combined routine for all specifically selected sections
+        if (specificSelections.length > 0) {
+            let sectionIdentifier = "Custom";
+            const sections = new Set(specificSelections.map(course => course.split('.')[1]));
+            if (sections.size === 1) {
+                sectionIdentifier = sections.values().next().value;
+            }
+            generatePdfForSection(specificSelections, semesterText, department, sectionIdentifier);
         }
-    });
 
-    resultsContainerEl.innerHTML = ''; // Clear results for new generation
+        // Generate a separate routine for each section of a generally selected course
+        generalSelections.forEach(baseCourse => {
+            const availableSections = findSectionsForCourse(baseCourse, department);
+            if (availableSections.length > 0) {
+                availableSections.forEach(section => {
+                    generatePdfForSection([`${baseCourse}.${section}`], semesterText, department, section);
+                });
+            }
+        });
 
-    // Generate one combined routine for all specifically selected sections
-    if (specificSelections.length > 0) {
-        generatePdfForSection(specificSelections, semesterText, department, "Custom");
-    }
-
-    // Generate a separate routine for each section of a generally selected course
-    generalSelections.forEach(baseCourse => {
-        const availableSections = findSectionsForCourse(baseCourse, department);
-        if (availableSections.length > 0) {
-            availableSections.forEach(section => {
-                generatePdfForSection([`${baseCourse}.${section}`], semesterText, department, section);
-            });
+        if (!linksContainerEl.hasChildNodes()) {
+            linksContainerEl.innerHTML = '<p class="text-red-400 text-center">No matching classes found.</p>';
         }
-    });
 
-    if (resultsContainerEl.innerHTML === '') {
-        resultsContainerEl.innerHTML = '<p class="text-red-400 text-center">No matching classes found.</p>';
-    }
+        // --- End Loading State ---
+        loadingIndicatorEl.classList.add('hidden');
+        generateBtnEl.disabled = false;
+    }, 50);
 });
 
 // --- HELPER FUNCTIONS ---
 function extractAvailableCourses() {
     availableCourses.clear();
     const tempCourses = new Set();
-    const courseSectionPattern = /[A-Z]{2,4}\s*\d{3,4}\.\d+/g; // Pattern to find courses with sections
+    const courseSectionPattern = /[A-Z]{2,4}\s*\d{3,4}\.\d+/g;
 
     masterRoutine.forEach(row => {
         const rowText = row.join(',');
@@ -158,11 +185,10 @@ function extractAvailableCourses() {
         }
     });
     
-    // Process the found courses to add both full and base versions
     tempCourses.forEach(courseWithSection => {
-        availableCourses.add(courseWithSection); // Add the full version, e.g., "CSE 320.4"
+        availableCourses.add(courseWithSection);
         const baseCourse = courseWithSection.split('.')[0];
-        availableCourses.add(baseCourse); // Add the base version, e.g., "CSE 320"
+        availableCourses.add(baseCourse);
     });
 }
 
@@ -173,14 +199,11 @@ function findSectionsForCourse(baseCourse, department) {
     masterRoutine.forEach(row => {
         row.forEach(cellContent => {
             if (!cellContent || !cellContent.startsWith(baseCourse)) return;
-
             const isEeeMarked = cellContent.toUpperCase().includes('(EEE)');
             const cellCoursePrefixMatch = baseCourse.match(/^([A-Z]{2,4})/);
             const cellCoursePrefix = cellCoursePrefixMatch ? cellCoursePrefixMatch[1] : '';
-            
             if (department === 'CSE' && isEeeMarked) return;
             if (department === 'EEE' && sharedCoursePrefixes.includes(cellCoursePrefix) && !isEeeMarked) return;
-            
             const match = cellContent.match(new RegExp(`^${baseCourse.replace(/\s/g, '\\s*')}\\.(\\d+)`));
             if (match) {
                 sections.add(match[1]);
@@ -249,25 +272,23 @@ function findSectionRoutine(courses, department) {
     let currentDay = '';
     let theoryTimeSlots = [];
     let labTimeSlots = [];
-    let inLabSection = false; // Flag to determine if we are in the lab part of the schedule
+    let inLabSection = false;
     const daysOfWeek = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
     masterRoutine.forEach((row, index) => {
         const firstCell = row[0] ? row[0].trim() : '';
-        
         if (daysOfWeek.includes(firstCell)) {
             currentDay = firstCell;
             theoryTimeSlots = masterRoutine[index + 1] || [];
             labTimeSlots = [];
-            inLabSection = false; // Reset for the new day
+            inLabSection = false;
             return;
         }
         if (!currentDay) return;
         
-        // This row indicates the start of the lab schedule for the current day
         if (firstCell === '' && row[1] && row[1].includes(':')) {
             labTimeSlots = row;
-            inLabSection = true; // Set the flag
+            inLabSection = true;
             return;
         }
         
@@ -325,7 +346,7 @@ function createPdf(sectionRoutine, semester, department, uniqueFaculties, sectio
     const sectionText = section === 'Custom' ? 'Custom Routine' : `Section ${section}`;
     doc.text(`Semester - ${semesterNumber}, ${sectionText}`, 14, 30);
     doc.setFontSize(12);
-    doc.text(`Class Routine - Spring 2025`, 14, 38);
+    doc.text(`Class Routine - Summer 2025`, 14, 38);
     
     doc.autoTable({
         head: [['DAY', 'TIME', 'ROOM', 'FACULTY', 'SUBJECT']],
@@ -358,5 +379,5 @@ function displayPdfLink(blob, section) {
     linkEl.className = 'download-link block bg-gray-700 p-3 rounded-lg hover:bg-indigo-500 text-white no-underline';
     linkEl.innerHTML = `<div class="flex justify-between items-center"><span>${fileName}</span><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></div>`;
     linkEl.addEventListener('click', () => { setTimeout(() => URL.revokeObjectURL(url), 100); });
-    resultsContainerEl.appendChild(linkEl);
+    linksContainerEl.appendChild(linkEl);
 }
