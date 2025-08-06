@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Routine Generator</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@3.5.23/dist/jspdf.plugin.autotable.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-900 text-white">
+
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-extrabold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-500">EDU Routine Generator</h1>
+            <p class="text-lg text-gray-400">Generate individual section routines from the master schedule.</p>
+        </header>
+
+        <main class="max-w-4xl mx-auto bg-gray-800 rounded-2xl shadow-2xl p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <div class="space-y-6">
+                    <div>
+                        <label for="routine-file" class="block mb-2 text-sm font-medium text-gray-300">1. Upload Routine CSV</label>
+                        <input type="file" id="routine-file" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 cursor-pointer" accept=".csv">
+                    </div>
+                    <div>
+                        <label for="course-search" class="block mb-2 text-sm font-medium text-gray-300">2. Search and Select Courses (e.g., CSE 317 or CSE 317.4)</label>
+                        <div class="course-search-container">
+                            <input type="text" id="course-search" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5" placeholder="Type to search courses with or without section">
+                            <div id="course-suggestions"></div>
+                        </div>
+                        <div id="selected-courses" class="selected-courses mt-2"></div>
+                    </div>
+                    <div>
+                        <label for="semester-select" class="block mb-2 text-sm font-medium text-gray-300">3. Select Semester</label>
+                        <select id="semester-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                            <option selected disabled>Choose a semester</option>
+                            <option value="1">1st Semester</option>
+                            <option value="2">2nd Semester</option>
+                            <option value="3">3rd Semester</option>
+                            <option value="4">4th Semester</option>
+                            <option value="5">5th Semester</option>
+                            <option value="6">6th Semester</option>
+                            <option value="7">7th Semester</option>
+                            <option value="8">8th Semester</option>
+                            <option value="9">9th Semester</option>
+                            <option value="10">10th Semester</option>
+                            <option value="11">11th Semester</option>
+                            <option value="12">12th Semester</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="department-select" class="block mb-2 text-sm font-medium text-gray-300">4. Select Department</label>
+                        <select id="department-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                            <option selected disabled>Choose a department</option>
+                            <option value="CSE">CSE</option>
+                            <option value="EEE">EEE</option>
+                        </select>
+                    </div>
+                    <button id="generate-btn" class="w-full text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:bg-gradient-to-l focus:ring-4 focus:outline-none focus:ring-purple-500 font-medium rounded-lg text-sm px-5 py-3 text-center transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Generate Routine
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-200">Generated Routine:</h3>
+                    <div id="results-container" class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto space-y-3">
+                        <p class="text-gray-500 text-center mt-8">PDF download link will appear here.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="text-center mt-12 text-sm text-gray-500">
+            <p>Developed by</p>
+            <p class="font-bold">Mohtasim Eram & Tafsir Juhan</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
