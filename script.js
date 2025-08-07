@@ -340,13 +340,29 @@ function createPdf(sectionRoutine, semester, department, uniqueFaculties, sectio
     const doc = new jsPDF();
     const semesterNumber = semester.split(' ')[0];
 
+    // --- NEW: Dynamic Session Logic ---
+    const now = new Date();
+    const month = now.getMonth(); // 0 = January, 11 = December
+    const year = now.getFullYear();
+    let session;
+
+    if (month >= 0 && month <= 3) { // January - April
+        session = "Spring";
+    } else if (month >= 4 && month <= 7) { // May - August
+        session = "Summer";
+    } else { // September - December
+        session = "Fall";
+    }
+    const sessionAndYearText = `Class Routine - ${session} ${year}`;
+    // --- End of New Logic ---
+
     doc.setFontSize(18);
     doc.text(`Department of ${department}`, 14, 22);
     doc.setFontSize(14);
     const sectionText = section === 'Custom' ? 'Custom Routine' : `Section ${section}`;
     doc.text(`Semester - ${semesterNumber}, ${sectionText}`, 14, 30);
     doc.setFontSize(12);
-    doc.text(`Class Routine - Summer 2025`, 14, 38);
+    doc.text(sessionAndYearText, 14, 38); // Use the new dynamic text
     
     doc.autoTable({
         head: [['DAY', 'TIME', 'ROOM', 'FACULTY', 'SUBJECT']],
