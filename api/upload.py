@@ -58,25 +58,24 @@ def parse_routine_complete(doc):
     data = []
     faculty_map = get_faculty_mapping(doc)
     
-    # Regex for Course (e.g. EEE 407 OR CSE 317.1)
     course_pattern = re.compile(r"([A-Z]{2,4}\s*\d{3}(?:\.[0-9A-Za-z]+)?)", re.IGNORECASE)
-    # Regex for Faculty
     faculty_pattern = re.compile(r"([A-Z][a-zA-Z\.]+\s?[A-Z]*)$") 
     
     valid_days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+
+    # --- FIX 1: Initialize Day OUTSIDE the loop ---
+    current_day = None 
 
     for table in doc.tables:
         rows = table.rows
         if not rows: continue
         
-        # --- FIX: DETECT DAY FROM THE VERY TOP ---
-        current_day = None
-        # Check the first cell of the first row (e.g., "Saturday")
+        # --- FIX 2: Check for a new Day, but DON'T reset to None if not found ---
         top_cell = rows[0].cells[0].text.strip()
         if top_cell in valid_days:
             current_day = top_cell
         
-        # 3. Find Header Row (Scan first 5 rows)
+        # 3. Find Header Row
         header_row_index = -1
         time_slots = []
         
@@ -95,23 +94,23 @@ def parse_routine_complete(doc):
         if header_row_index == -1:
             continue
 
-        # 4. Parse Rows (Start after header)
+        # 4. Parse Rows
         for row in rows[header_row_index+1:]:
             cells = row.cells
             if not cells: continue
             
             first_cell_text = cells[0].text.strip()
             
-            # Update Day if it appears inside the table rows (rare, but possible)
+            # Update Day if found inside the table
             if first_cell_text in valid_days:
                 current_day = first_cell_text
                 continue
             
-            # If no day found yet, skip
+            # If we still don't know the day, we can't process this row
             if not current_day:
                 continue
 
-            # Check for Room Number (starts with digit or 'N')
+            # Check for Room Number
             if first_cell_text.isdigit() or first_cell_text.startswith('N'):
                 room = first_cell_text
                 
