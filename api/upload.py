@@ -1,185 +1,201 @@
-import os  # <--- NEW IMPORT
+import os
+import re
+import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pandas as pd
 from docx import Document
 import requests
-import json
 
 app = Flask(__name__)
 CORS(app)
 
 # --- CONFIGURATION ---
+# Use /test_routine.json for testing
 FIREBASE_URL = "https://edu-routine-generator-default-rtdb.asia-southeast1.firebasedatabase.app/current_routine.json"
-
-# Read the password securely from Vercel
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
+# ==========================================
+# --- HELPER FUNCTIONS ---
+# ==========================================
+
 def is_time_slot(text):
-    # Checks if text looks like "8.30-10.00" 
-    return '-' in text and any(char.isdigit() for char in text) and len(text) < 20
+    clean_text = text.replace(' ', '').replace('\n', '')
+    # Regex to catch 8.30-10.00, 8:30-10:00, with hyphens or dashes
+    return bool(re.search(r'\d{1,2}[\.:]\d{2}[-–—]\d{1,2}[\.:]\d{2}', clean_text))
 
 def get_faculty_mapping(doc):
-    """
-    Scans the document for the 'Faculty Members' table and returns a dictionary.
-    Format: {'ANJ': 'Mr. Asif Noor Jamee', 'SMI': 'Mr. Md. Siratul Mustakim Ifty'}
-    """
     mapping = {}
-    print("--- Scanning for Faculty List ---")
-    
     for table in doc.tables:
-        # Check if this is the Faculty table (look for "Short Form" in header)
-        is_faculty_table = False
-        if len(table.rows) > 0:
-            header_text = " ".join([cell.text for cell in table.rows[0].cells])
-            if "Short Form" in header_text or "Faculty Members" in header_text:
-                is_faculty_table = True
+        rows = table.rows
+        if not rows: continue
         
-        if is_faculty_table:
-            # Iterate through rows (skip header)
-            for row in table.rows[1:]:
-                cells = row.cells
-                if len(cells) >= 3:
-                    full_name = cells[1].text.strip()
-                    short_form = cells[2].text.strip()
+        # Scan first few rows for headers
+        for i in range(min(3, len(rows))):
+            header = [cell.text.strip().lower() for cell in rows[i].cells]
+            if 'name' in header and ('short form' in header or 'acronym' in header):
+                try:
+                    name_idx = header.index('name')
+                    acronym_idx = -1
+                    for idx, h in enumerate(header):
+                        if 'short' in h or 'acronym' in h:
+                            acronym_idx = idx
+                            break
                     
-                    if short_form and full_name:
-                        mapping[short_form] = full_name
-            print(f"Found {len(mapping)} faculty members.")
-            break # Stop looking after finding the table
-            
+                    if acronym_idx != -1:
+                        for row in rows[i+1:]:
+                            cells = row.cells
+                            if len(cells) > max(name_idx, acronym_idx):
+                                name = cells[name_idx].text.strip()
+                                acronym = cells[acronym_idx].text.strip()
+                                if acronym and name:
+                                    mapping[acronym] = name
+                except:
+                    continue
+                break
     return mapping
 
-def parse_routine_complete(file_path):
-    print(f"--- Processing: {file_path} ---")
-    doc = Document(file_path)
-    
-    # STEP 1: Build the Faculty Dictionary
+def parse_routine_complete(doc):
+    data = []
     faculty_map = get_faculty_mapping(doc)
     
-    parsed_data = []
-    current_day = "Unknown"
-    table_type = "Theory" 
+    # Regex for Course (e.g. EEE 407 OR CSE 317.1)
+    course_pattern = re.compile(r"([A-Z]{2,4}\s*\d{3}(?:\.[0-9A-Za-z]+)?)", re.IGNORECASE)
+    # Regex for Faculty
+    faculty_pattern = re.compile(r"([A-Z][a-zA-Z\.]+\s?[A-Z]*)$") 
     
-    DAYS = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    valid_days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
-    # STEP 2: Parse the Routine Tables
-    for tbl_idx, table in enumerate(doc.tables):
-        # A. Check Context (Day/Type) from the full text of the table
-        full_table_text = ""
-        for row in table.rows:
-            for cell in row.cells:
-                full_table_text += " " + cell.text
+    for table in doc.tables:
+        rows = table.rows
+        if not rows: continue
         
-        # Skip the Faculty table itself so we don't try to parse it as classes
-        if "Short Form" in full_table_text:
+        # --- FIX: DETECT DAY FROM THE VERY TOP ---
+        current_day = None
+        # Check the first cell of the first row (e.g., "Saturday")
+        top_cell = rows[0].cells[0].text.strip()
+        if top_cell in valid_days:
+            current_day = top_cell
+        
+        # 3. Find Header Row (Scan first 5 rows)
+        header_row_index = -1
+        time_slots = []
+        
+        for i in range(min(5, len(rows))):
+            cells = [cell.text.strip() for cell in rows[i].cells]
+            found_slots = []
+            for idx, text in enumerate(cells):
+                if is_time_slot(text):
+                    found_slots.append({'index': idx, 'time': text.strip()})
+            
+            if len(found_slots) >= 1:
+                header_row_index = i
+                time_slots = found_slots
+                break
+        
+        if header_row_index == -1:
             continue
 
-        for day in DAYS:
-            if day in full_table_text:
-                current_day = day
-        
-        if 'Theory' in full_table_text:
-            table_type = 'Theory'
-        elif 'Lab' in full_table_text:
-            table_type = 'Lab'
-
-        # B. Find Header Row
-        header_map = {} 
-        data_start_row = -1
-        
-        for r_idx, row in enumerate(table.rows):
+        # 4. Parse Rows (Start after header)
+        for row in rows[header_row_index+1:]:
             cells = row.cells
-            is_header = False
-            for c_idx, cell in enumerate(cells):
-                txt = cell.text.strip()
-                if is_time_slot(txt):
-                    header_map[c_idx] = txt
-                    is_header = True
+            if not cells: continue
             
-            if is_header:
-                data_start_row = r_idx + 1
-                break 
-        
-        # C. Extract Data
-        if header_map:
-            print(f"   -> Extracting data from Table {tbl_idx} for {current_day}...")
+            first_cell_text = cells[0].text.strip()
             
-            for r_idx in range(data_start_row, len(table.rows)):
-                row = table.rows[r_idx]
-                cells = row.cells
+            # Update Day if it appears inside the table rows (rare, but possible)
+            if first_cell_text in valid_days:
+                current_day = first_cell_text
+                continue
+            
+            # If no day found yet, skip
+            if not current_day:
+                continue
+
+            # Check for Room Number (starts with digit or 'N')
+            if first_cell_text.isdigit() or first_cell_text.startswith('N'):
+                room = first_cell_text
                 
-                if not cells: continue
-                room = cells[0].text.strip()
-                if not room: continue 
-                
-                for col_idx, time_val in header_map.items():
-                    if col_idx < len(cells):
-                        cell_text = cells[col_idx].text.strip()
+                for slot in time_slots:
+                    if slot['index'] < len(cells):
+                        cell_text = cells[slot['index']].text.strip()
+                        if not cell_text: continue
                         
-                        if cell_text:
-                            # Split Course / Faculty
-                            if '\n' in cell_text:
-                                parts = cell_text.rsplit('\n', 1)
-                                course = parts[0].strip()
-                                faculty_short = parts[1].strip()
-                            elif ',' in cell_text:
-                                parts = cell_text.rsplit(',', 1)
-                                course = parts[0].strip()
-                                faculty_short = parts[1].strip()
-                            else:
-                                course = cell_text.strip()
-                                faculty_short = ""
-
-                            course = course.replace('\n', ' ')
+                        cell_text = cell_text.replace('\n', ' ')
+                        
+                        # MATCH COURSE
+                        course_match = course_pattern.search(cell_text)
+                        
+                        if course_match:
+                            course_code = course_match.group(1).strip()
                             
-                            # LOOKUP FULL NAME
-                            # Default to the short code if full name not found
-                            faculty_full = faculty_map.get(faculty_short, faculty_short)
+                            # MATCH FACULTY
+                            remaining_text = cell_text.replace(course_code, '').strip()
+                            remaining_text = remaining_text.strip(',').strip()
+                            
+                            faculty_acronym = ""
+                            if 0 < len(remaining_text) < 15:
+                                faculty_acronym = remaining_text
+                            else:
+                                fac_match = faculty_pattern.search(remaining_text)
+                                if fac_match:
+                                    faculty_acronym = fac_match.group(1)
 
-                            parsed_data.append({
-                                'Day': current_day,
-                                'Type': table_type,
-                                'Room': room,
-                                'Time': time_val,
-                                'Course': course,
-                                'FacultyAcronym': faculty_short,
-                                'FacultyFullName': faculty_full
+                            # DETERMINE TYPE
+                            header_text_full = " ".join([c.text.lower() for c in rows[header_row_index].cells])
+                            prev_row_text = rows[max(0, header_row_index-1)].cells[0].text.lower() if header_row_index > 0 else ""
+                            
+                            class_type = 'Theory'
+                            if 'lab' in header_text_full or 'lab' in prev_row_text:
+                                class_type = 'Lab'
+
+                            data.append({
+                                "Day": current_day,
+                                "Time": slot['time'],
+                                "Room": room,
+                                "Course": course_code,
+                                "FacultyAcronym": faculty_acronym,
+                                "FacultyFullName": faculty_map.get(faculty_acronym, ""),
+                                "Type": class_type
                             })
+    
+    if not data:
+        return pd.DataFrame(columns=["Day", "Time", "Room", "Course", "FacultyAcronym", "FacultyFullName", "Type"])
+        
+    return pd.DataFrame(data)
 
-    return pd.DataFrame(parsed_data)
+# ==========================================
+# --- ROUTES ---
+# ==========================================
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     try:
-        # 1. SECURITY CHECK (The New Part)
-        # We expect the password to be sent in the request headers or form data
         user_password = request.form.get('password')
-        
-        if not user_password:
-            return jsonify({"error": "Password required"}), 401
-            
-        if user_password != ADMIN_PASSWORD:
+        if ADMIN_PASSWORD and user_password != ADMIN_PASSWORD:
             return jsonify({"error": "Wrong password"}), 403
 
-        # 2. File Checks (Same as before)
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
-        
+            
         file = request.files['file']
         if file.filename == '':
             return jsonify({"error": "No selected file"}), 400
 
-        # 3. Parse & Upload (Same as before)
-        df = parse_routine_complete(file.stream)
+        doc = Document(file.stream)
+        df = parse_routine_complete(doc)
+        
         routine_json = df.to_dict(orient="records")
         
-        requests.put(FIREBASE_URL, json={
+        response = requests.put(FIREBASE_URL, json={
             "updatedAt": str(pd.Timestamp.now()),
             "data": routine_json
         })
 
-        return jsonify({"status": "success", "count": len(routine_json)})
+        return jsonify({
+            "status": "success", 
+            "count": len(routine_json),
+            "firebase_status": response.status_code
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
