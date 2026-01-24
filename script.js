@@ -137,23 +137,28 @@ function generateRoutines() {
         const generalSelections = [];  
 
         selectedCourses.forEach(course => {
-            if (course.includes('.')) {
+            // FIX: Check if this course exists EXACTLY as-is in the data
+            // This handles "EEE 407" correctly by treating it as specific
+            const exactMatchExists = routineData.some(item => item.Course === course);
+
+            if (course.includes('.') || exactMatchExists) {
                 specificSelections.push(course);
             } else {
                 generalSelections.push(course);
             }
         });
 
-        // 1. Generate combined PDF for specific selections
+        // 1. Generate combined PDF for specific selections (Includes EEE 407 now)
         if (specificSelections.length > 0) {
-            const sections = new Set(specificSelections.map(c => c.split('.')[1]));
+            // Determine section identifier (if mixed, use "Custom")
+            const sections = new Set(specificSelections.map(c => c.includes('.') ? c.split('.')[1] : 'Regular'));
             const sectionIdentifier = sections.size === 1 ? sections.values().next().value : "Custom";
             
             const routineDataSubset = routineData.filter(item => specificSelections.includes(item.Course));
             createAndDisplayPdf(routineDataSubset, semesterText, department, sectionIdentifier);
         }
 
-        // 2. Handle generic selections
+        // 2. Handle generic selections (Parents looking for children, e.g. CSE 111 looking for 111.1, 111.2)
         generalSelections.forEach(baseCourse => {
             const matchingItems = routineData.filter(item => item.Course.startsWith(baseCourse + '.'));
             const uniqueSections = [...new Set(matchingItems.map(item => item.Course.split('.')[1]))];
