@@ -24,26 +24,23 @@
 
     <script>
         async function uploadRoutine() {
-            const password = document.getElementById('password').value;
+            const password = document.getElementById('password').value; // Get what user typed
             const fileInput = document.getElementById('fileInput');
             const status = document.getElementById('status');
             const btn = document.getElementById('uploadBtn');
 
-            // Basic Password Protection
-            if (password !== "edu2026") { alert("Wrong Password!"); return; }
+            if (!password) { alert("Enter a password!"); return; }
             if (fileInput.files.length === 0) { alert("Select a file!"); return; }
 
-            // UI Feedback
             btn.disabled = true;
             btn.textContent = "Processing...";
-            status.innerHTML = `<span class="animate-pulse text-yellow-400">Parsing DOCX & Updating Database...</span>`;
+            status.innerHTML = `<span class="animate-pulse text-yellow-400">Verifying & Uploading...</span>`;
 
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
+            formData.append('password', password); // Send password to server
 
             try {
-                // Send to Vercel Backend
-                // USE THIS FOR LOCAL TESTING ONLY:
                 const response = await fetch('/api/upload', {
                     method: 'POST',
                     body: formData
@@ -51,12 +48,14 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    status.innerHTML = `<span class="text-green-400 font-bold">Success! ${result.count} classes updated.</span>`;
+                    status.innerHTML = `<span class="text-green-400 font-bold">Success! Routine Updated.</span>`;
                     btn.textContent = "Done";
                 } else {
-                    throw new Error(result.error);
+                    // This handles "Wrong Password" errors safely
+                    throw new Error(result.error || "Upload failed");
                 }
             } catch (error) {
+                console.error(error);
                 status.innerHTML = `<span class="text-red-500">Error: ${error.message}</span>`;
                 btn.disabled = false;
                 btn.textContent = "Try Again";

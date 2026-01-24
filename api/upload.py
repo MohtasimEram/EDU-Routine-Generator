@@ -1,8 +1,8 @@
+import os  # <--- NEW IMPORT
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
 from docx import Document
-import io
 import requests
 import json
 
@@ -12,10 +12,8 @@ CORS(app)
 # --- CONFIGURATION ---
 FIREBASE_URL = "https://edu-routine-generator-default-rtdb.asia-southeast1.firebasedatabase.app/current_routine.json"
 
-# ==========================================
-# --- PASTE YOUR 3 PARSING FUNCTIONS HERE ---
-# (is_time_slot, get_faculty_mapping, parse_routine_complete)
-# ==========================================
+# Read the password securely from Vercel
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 def is_time_slot(text):
     # Checks if text looks like "8.30-10.00" 
@@ -151,37 +149,37 @@ def parse_routine_complete(file_path):
 
     return pd.DataFrame(parsed_data)
 
-
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     try:
+        # 1. SECURITY CHECK (The New Part)
+        # We expect the password to be sent in the request headers or form data
+        user_password = request.form.get('password')
+        
+        if not user_password:
+            return jsonify({"error": "Password required"}), 401
+            
+        if user_password != ADMIN_PASSWORD:
+            return jsonify({"error": "Wrong password"}), 403
+
+        # 2. File Checks (Same as before)
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
-            
+        
         file = request.files['file']
         if file.filename == '':
             return jsonify({"error": "No selected file"}), 400
 
-        # --- THE FIX IS HERE ---
-        # We pass the file stream directly to your function.
-        # Your function (parse_routine_complete) will handle opening it via Document(file)
-        
-        df = parse_routine_complete(file.stream) 
-        
-        # -----------------------
-        
+        # 3. Parse & Upload (Same as before)
+        df = parse_routine_complete(file.stream)
         routine_json = df.to_dict(orient="records")
         
-        response = requests.put(FIREBASE_URL, json={
+        requests.put(FIREBASE_URL, json={
             "updatedAt": str(pd.Timestamp.now()),
             "data": routine_json
         })
 
-        return jsonify({
-            "status": "success", 
-            "count": len(routine_json),
-            "firebase_status": response.status_code
-        })
+        return jsonify({"status": "success", "count": len(routine_json)})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
