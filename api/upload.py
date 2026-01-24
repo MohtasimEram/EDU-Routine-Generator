@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 # --- CONFIGURATION ---
-# Use /test_routine.json for testing
+# REMEMBER: Switch to /current_routine.json before final deployment!
 FIREBASE_URL = "https://edu-routine-generator-default-rtdb.asia-southeast1.firebasedatabase.app/current_routine.json"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
@@ -19,8 +19,10 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 # ==========================================
 
 def is_time_slot(text):
+    """
+    Returns True if the text looks like a time range (8.30-10.00).
+    """
     clean_text = text.replace(' ', '').replace('\n', '')
-    # Regex to catch 8.30-10.00, 8:30-10:00, with hyphens or dashes
     return bool(re.search(r'\d{1,2}[\.:]\d{2}[-–—]\d{1,2}[\.:]\d{2}', clean_text))
 
 def get_faculty_mapping(doc):
@@ -29,7 +31,6 @@ def get_faculty_mapping(doc):
         rows = table.rows
         if not rows: continue
         
-        # Scan first few rows for headers
         for i in range(min(3, len(rows))):
             header = [cell.text.strip().lower() for cell in rows[i].cells]
             if 'name' in header and ('short form' in header or 'acronym' in header):
@@ -58,24 +59,25 @@ def parse_routine_complete(doc):
     data = []
     faculty_map = get_faculty_mapping(doc)
     
+    # Regex Patterns
     course_pattern = re.compile(r"([A-Z]{2,4}\s*\d{3}(?:\.[0-9A-Za-z]+)?)", re.IGNORECASE)
-    faculty_pattern = re.compile(r"([A-Z][a-zA-Z\.]+\s?[A-Z]*)$") 
-    
-    valid_days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    # New: Regex to capture specific times inside cells (e.g. 1.30-3.30 or 1:30 - 3:30)
+    # Capture group 1 is the time string
+    custom_time_pattern = re.compile(r"\(?(\d{1,2}[\.:]\d{2}\s*[-–—]\s*\d{1,2}[\.:]\d{2})\)?")
 
-    # --- FIX 1: Initialize Day OUTSIDE the loop ---
+    valid_days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     current_day = None 
 
     for table in doc.tables:
         rows = table.rows
         if not rows: continue
         
-        # --- FIX 2: Check for a new Day, but DON'T reset to None if not found ---
+        # Check Day at top of table
         top_cell = rows[0].cells[0].text.strip()
         if top_cell in valid_days:
             current_day = top_cell
         
-        # 3. Find Header Row
+        # Find Header Row
         header_row_index = -1
         time_slots = []
         
@@ -94,19 +96,17 @@ def parse_routine_complete(doc):
         if header_row_index == -1:
             continue
 
-        # 4. Parse Rows
+        # Parse Rows
         for row in rows[header_row_index+1:]:
             cells = row.cells
             if not cells: continue
             
             first_cell_text = cells[0].text.strip()
             
-            # Update Day if found inside the table
             if first_cell_text in valid_days:
                 current_day = first_cell_text
                 continue
             
-            # If we still don't know the day, we can't process this row
             if not current_day:
                 continue
 
@@ -116,30 +116,48 @@ def parse_routine_complete(doc):
                 
                 for slot in time_slots:
                     if slot['index'] < len(cells):
-                        cell_text = cells[slot['index']].text.strip()
-                        if not cell_text: continue
+                        raw_text = cells[slot['index']].text.strip()
+                        if not raw_text: continue
                         
-                        cell_text = cell_text.replace('\n', ' ')
+                        # Use a working copy of text for cleaning
+                        processing_text = raw_text.replace('\n', ' ')
                         
-                        # MATCH COURSE
-                        course_match = course_pattern.search(cell_text)
+                        # --- 1. DETECT CUSTOM TIME OVERRIDE ---
+                        final_time = slot['time']
+                        
+                        # Check if cell contains a specific time (e.g., "(1.30-3.30)")
+                        time_match = custom_time_pattern.search(processing_text)
+                        if time_match:
+                            # Use the found time (e.g. "1.30-3.30")
+                            final_time = time_match.group(1).replace(' ', '') # Normalize spaces
+                            # Remove the time string (and surrounding parens) from text so it's not treated as Faculty
+                            # We replace the FULL match (including parens if regex caught them)
+                            processing_text = processing_text.replace(time_match.group(0), '')
+
+                        # --- 2. EXTRACT COURSE ---
+                        course_match = course_pattern.search(processing_text)
                         
                         if course_match:
                             course_code = course_match.group(1).strip()
                             
-                            # MATCH FACULTY
-                            remaining_text = cell_text.replace(course_code, '').strip()
-                            remaining_text = remaining_text.strip(',').strip()
+                            # --- 3. EXTRACT FACULTY (CLEANING STRATEGY) ---
+                            # Remove Course Code
+                            remaining = processing_text.replace(course_code, '')
                             
-                            faculty_acronym = ""
-                            if 0 < len(remaining_text) < 15:
-                                faculty_acronym = remaining_text
-                            else:
-                                fac_match = faculty_pattern.search(remaining_text)
-                                if fac_match:
-                                    faculty_acronym = fac_match.group(1)
+                            # Remove "(EEE)" or "(CSE)" noise
+                            remaining = re.sub(r'\([A-Z]{3}\)', '', remaining)
+                            
+                            # Remove empty parentheses "()"
+                            remaining = remaining.replace('()', '')
+                            
+                            # Clean up commas, spaces, dashes
+                            faculty_acronym = remaining.strip(' ,-–—')
+                            
+                            # Final sanity check: Faculty shouldn't be too long
+                            if len(faculty_acronym) > 15:
+                                faculty_acronym = "" # Logic failed, safer to show nothing than garbage
 
-                            # DETERMINE TYPE
+                            # Determine Type
                             header_text_full = " ".join([c.text.lower() for c in rows[header_row_index].cells])
                             prev_row_text = rows[max(0, header_row_index-1)].cells[0].text.lower() if header_row_index > 0 else ""
                             
@@ -149,7 +167,7 @@ def parse_routine_complete(doc):
 
                             data.append({
                                 "Day": current_day,
-                                "Time": slot['time'],
+                                "Time": final_time, # Uses override if found
                                 "Room": room,
                                 "Course": course_code,
                                 "FacultyAcronym": faculty_acronym,
