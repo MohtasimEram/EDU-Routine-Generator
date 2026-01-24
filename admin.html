@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Routine Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white flex justify-center items-center h-screen">
+    <div class="bg-gray-800 p-8 rounded-xl shadow-2xl w-96">
+        <h1 class="text-2xl font-bold mb-6 text-center text-indigo-400">Admin Upload</h1>
+        
+        <label class="text-xs text-gray-400 uppercase">Admin Password</label>
+        <input type="password" id="password" class="w-full p-2 mb-4 bg-gray-700 rounded text-white border border-gray-600 focus:border-indigo-500 outline-none">
+        
+        <label class="text-xs text-gray-400 uppercase">Routine File (.docx)</label>
+        <input type="file" id="fileInput" accept=".docx" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white cursor-pointer mb-6">
+        
+        <button onclick="uploadRoutine()" id="uploadBtn" class="w-full bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 text-white font-bold py-2 px-4 rounded transition">
+            Upload & Update
+        </button>
+        
+        <p id="status" class="mt-4 text-center text-sm text-gray-400"></p>
+    </div>
+
+    <script>
+        async function uploadRoutine() {
+            const password = document.getElementById('password').value;
+            const fileInput = document.getElementById('fileInput');
+            const status = document.getElementById('status');
+            const btn = document.getElementById('uploadBtn');
+
+            // Basic Password Protection
+            if (password !== "edu2026") { alert("Wrong Password!"); return; }
+            if (fileInput.files.length === 0) { alert("Select a file!"); return; }
+
+            // UI Feedback
+            btn.disabled = true;
+            btn.textContent = "Processing...";
+            status.innerHTML = `<span class="animate-pulse text-yellow-400">Parsing DOCX & Updating Database...</span>`;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                // Send to Vercel Backend
+                // USE THIS FOR LOCAL TESTING ONLY:
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    status.innerHTML = `<span class="text-green-400 font-bold">Success! ${result.count} classes updated.</span>`;
+                    btn.textContent = "Done";
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                status.innerHTML = `<span class="text-red-500">Error: ${error.message}</span>`;
+                btn.disabled = false;
+                btn.textContent = "Try Again";
+            }
+        }
+    </script>
+</body>
+</html>

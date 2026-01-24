@@ -6,14 +6,9 @@
     <title>EDU Routine Generator</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/papaparse@5.3.0/papaparse.min.js"></script>
     <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.5.23/dist/jspdf.plugin.autotable.js"></script>
-    <link rel="icon" href="favicon.ico">
-    
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-gray-900 text-white">
@@ -21,26 +16,28 @@
     <div class="container mx-auto px-4 py-8">
         <header class="text-center mb-12">
             <h1 class="text-4xl md:text-5xl font-extrabold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-500">EDU Routine Generator</h1>
-            <p class="text-lg text-gray-400">Generate individual section routines from the master schedule of East Delta University.</p>
+            <p class="text-lg text-gray-400">Generate section routines from the Python-parsed JSON data.</p>
         </header>
 
         <main class="max-w-4xl mx-auto bg-gray-800 rounded-2xl shadow-2xl p-8">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                 <div class="space-y-6">
-                    <div>
-                        <label for="routine-file" class="block mb-2 text-sm font-medium text-gray-300">1. Upload Master Schedule CSV</label>
-                        <input type="file" id="routine-file" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 cursor-pointer" accept=".csv">
+                    
+                    <div id="data-status" class="flex items-center space-x-2 text-sm font-medium text-yellow-400">
+                        <div class="w-2.5 h-2.5 bg-yellow-400 rounded-full animate-pulse"></div>
+                        <span>Loading routine data...</span>
                     </div>
+
                     <div>
-                        <label for="course-search" class="block mb-2 text-sm font-medium text-gray-300">2. Search and Select Courses (e.g., CSE 317.4)</label>
+                        <label for="course-search" class="block mb-2 text-sm font-medium text-gray-300">1. Search Courses</label>
                         <div class="course-search-container">
-                            <input type="text" id="course-search" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5" placeholder="Type to search courses with or without section">
+                            <input type="text" id="course-search" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5" placeholder="Type course code (e.g. CSE 317)..." disabled>
                             <div id="course-suggestions"></div>
                         </div>
                         <div id="selected-courses" class="selected-courses mt-2"></div>
                     </div>
                     <div>
-                        <label for="semester-select" class="block mb-2 text-sm font-medium text-gray-300">3. Select Semester</label>
+                        <label for="semester-select" class="block mb-2 text-sm font-medium text-gray-300">2. Select Semester (For Header)</label>
                         <select id="semester-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
                             <option selected disabled>Choose a semester</option>
                             <option value="1">1st Semester</option>
@@ -58,7 +55,7 @@
                         </select>
                     </div>
                     <div>
-                        <label for="department-select" class="block mb-2 text-sm font-medium text-gray-300">4. Select Department</label>
+                        <label for="department-select" class="block mb-2 text-sm font-medium text-gray-300">3. Select Department (For Header)</label>
                         <select id="department-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
                             <option selected disabled>Choose a department</option>
                             <option value="CSE">CSE</option>
@@ -70,13 +67,13 @@
                     </button>
                 </div>
                 <div class="space-y-4">
-                    <h3 class="text-lg font-semibold text-gray-200 text-center">Generated Routine</h3>
+                    <h3 class="text-lg font-semibold text-gray-200 text-center">Generated PDFs</h3>
                     <div id="results-container" class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto">
                         <div id="loading-indicator" class="hidden h-full flex flex-col justify-center items-center">
                             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
-                            <p class="mt-3 text-gray-400">Generating PDFs...</p>
+                            <p class="mt-3 text-gray-400">Generating...</p>
                         </div>
-                        <p id="placeholder-text" class="text-gray-500 text-center mt-8">PDF download link will appear here.</p>
+                        <p id="placeholder-text" class="text-gray-500 text-center mt-8">PDF download links will appear here.</p>
                         <div id="links-container" class="space-y-3"></div>
                     </div>
                 </div>
@@ -84,10 +81,8 @@
         </main>
 
         <footer class="text-center mt-12 text-sm text-gray-500">
-            <p>Developed by</p>
-            <p class="font-bold mt-1">Mohtasim Eram</p>
-            <hr class="max-w-xl mx-auto my-8 border-gray-700">
-            <p class="pt-2">&copy; 2025 EDU Routine Generator. All Rights Reserved.</p>
+            <p>Developed by <span class="font-bold text-gray-400">Mohtasim Eram</span></p>
+            <p class="mt-2 text-xs">Powered by Python Parsing logic</p>
         </footer>
     </div>
 
