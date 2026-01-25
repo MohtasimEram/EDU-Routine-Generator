@@ -137,6 +137,9 @@ function checkInputs() {
 // --- MAIN GENERATION LOGIC (GROUP BY SECTION) ---
 // --- MAIN GENERATION LOGIC (HYBRID: CUSTOM + BATCH) ---
 // --- MAIN GENERATION LOGIC (SMART NAMING) ---
+// --- MAIN GENERATION LOGIC (SMART SORTING & GROUPING) ---
+// --- MAIN GENERATION LOGIC (SMART HEADERS) ---
+// --- MAIN GENERATION LOGIC (AUTO-MERGE & SMART HEADERS) ---
 function generateRoutines() {
     // UI Loading State
     placeholderTextEl.classList.add('hidden');
@@ -148,22 +151,19 @@ function generateRoutines() {
         const semesterText = semesterSelectEl.options[semesterSelectEl.selectedIndex].text;
         const department = departmentSelectEl.value;
 
-        // Bucket for Root courses (Key: Section Number, Value: Array of Rows)
-        const sectionMap = new Map();
-        
-        // Bucket for Specific selections (All mixed sections go here initially)
-        let customRoutineData = [];
+        // 1. Gather Data into Buckets
+        const sectionMap = new Map();   // Key: "1", "2" -> Value: [Rows]
+        let customRoutineData = [];     // Mixed/Specific selections
 
         selectedCourses.forEach(courseStr => {
-            // CHECK: Is this a Specific Course (has dot) OR an Exact Match (e.g. EEE 407)?
+            // CHECK: Exact Match (Specific Section or EEE 407)
             const exactMatches = routineData.filter(r => r.Course === courseStr);
 
             if (exactMatches.length > 0) {
-                // RULE 1: Specific Selections (e.g. CSE 443.3)
                 customRoutineData = customRoutineData.concat(exactMatches);
             } 
             else {
-                // RULE 2: Root Selections (e.g. CSE 459)
+                // Root Course (CSE 459) -> Add children to Section Buckets
                 const childRows = routineData.filter(r => r.Course.startsWith(courseStr + '.'));
                 
                 childRows.forEach(row => {
@@ -176,44 +176,103 @@ function generateRoutines() {
             }
         });
 
-        // 1. Generate the SPECIFIC SELECTION PDF
+        // --- NEW: AUTO-MERGE LOGIC ---
+        // If the 'Custom' data actually belongs to a single section (e.g. all Section 3),
+        // move it into the main sectionMap so it merges with the Batch data.
         if (customRoutineData.length > 0) {
             const uniqueCustomRows = [...new Set(customRoutineData)];
-            
-            // --- SMART NAMING LOGIC ---
-            // Check if all selected courses belong to the SAME section
             const sectionsFound = new Set();
+            
             uniqueCustomRows.forEach(row => {
                 if (row.Course.includes('.')) {
                     sectionsFound.add(row.Course.split('.')[1]);
                 }
             });
 
-            let identifier = "Custom";
-            
-            // If we found exactly one unique section (e.g. everyone is Section 3), use it.
-            // If sectionsFound is empty (only EEE 407), or > 1 (mixed 1 & 5), keep "Custom".
+            // If ALL specific selections belong to ONE section (e.g. "3")
             if (sectionsFound.size === 1) {
-                identifier = sectionsFound.values().next().value;
+                const targetSection = sectionsFound.values().next().value;
+                
+                // Merge into existing bucket or create new one
+                if (!sectionMap.has(targetSection)) {
+                    sectionMap.set(targetSection, []);
+                }
+                sectionMap.get(targetSection).push(...uniqueCustomRows);
+                
+                // Clear custom bucket so it doesn't render twice
+                customRoutineData = [];
             }
-            // --------------------------
-
-            createAndDisplayPdf(uniqueCustomRows, semesterText, department, identifier);
         }
+        // -----------------------------
 
-        // 2. Generate the SECTION PDFs (for Root selections)
-        if (sectionMap.size > 0) {
-            const sortedSections = Array.from(sectionMap.keys()).sort();
+        // 2. Prepare Render List
+        let routinesToRender = [];
 
-            sortedSections.forEach(sectionID => {
-                const rows = sectionMap.get(sectionID);
-                const uniqueRows = [...new Set(rows)];
-                createAndDisplayPdf(uniqueRows, semesterText, department, sectionID);
+        // A. Process Custom Routine (Only if it wasn't merged above)
+        if (customRoutineData.length > 0) {
+            const uniqueRows = [...new Set(customRoutineData)];
+            routinesToRender.push({
+                id: "Custom",
+                data: uniqueRows,
+                count: new Set(uniqueRows.map(r => r.Course)).size,
+                type: 'Custom'
             });
         }
 
-        // Error Handling
-        if (customRoutineData.length === 0 && sectionMap.size === 0) {
+        // B. Process Section Routines
+        sectionMap.forEach((rows, sectionID) => {
+            const uniqueRows = [...new Set(rows)];
+            routinesToRender.push({
+                id: sectionID,
+                data: uniqueRows,
+                count: new Set(uniqueRows.map(r => r.Course)).size,
+                type: 'Section'
+            });
+        });
+
+        // 3. Sorting & Grouping
+        if (routinesToRender.length > 0) {
+            const maxCourseCount = Math.max(...routinesToRender.map(r => r.count));
+            const threshold = maxCourseCount > 1 ? (maxCourseCount - 1) : 1;
+            
+            const primaryRoutines = routinesToRender.filter(r => r.count >= threshold);
+            const secondaryRoutines = routinesToRender.filter(r => r.count < threshold);
+
+            // Sort
+            primaryRoutines.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+            secondaryRoutines.sort((a, b) => b.count - a.count || a.id.localeCompare(b.id, undefined, { numeric: true }));
+
+            // Headers Logic
+            const isBatchGen = sectionMap.size > 0; // Merged data counts as batch now
+            const hasSplit = secondaryRoutines.length > 0;
+            const showHeaders = isBatchGen && hasSplit;
+
+            // 4. Render
+            if (primaryRoutines.length > 0) {
+                if (showHeaders) {
+                    const mainHeader = document.createElement('div');
+                    mainHeader.className = "w-full text-green-400 text-xs uppercase font-bold tracking-wider mb-2 text-center";
+                    mainHeader.innerText = "Main Sections";
+                    linksContainerEl.appendChild(mainHeader);
+                }
+                primaryRoutines.forEach(r => {
+                    createAndDisplayPdf(r.data, semesterText, department, r.id);
+                });
+            }
+
+            if (secondaryRoutines.length > 0) {
+                if (showHeaders) {
+                    const separator = document.createElement('div');
+                    separator.className = "w-full text-gray-400 text-xs uppercase font-bold tracking-wider mt-6 mb-2 text-center border-t border-gray-700 pt-4";
+                    separator.innerText = "Partial / Extra Lab Sections";
+                    linksContainerEl.appendChild(separator);
+                }
+                secondaryRoutines.forEach(r => {
+                    createAndDisplayPdf(r.data, semesterText, department, r.id);
+                });
+            }
+
+        } else {
             linksContainerEl.innerHTML = '<p class="text-red-400 text-center">No matching classes found in data.</p>';
         }
 
