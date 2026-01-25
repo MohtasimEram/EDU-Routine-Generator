@@ -11,7 +11,7 @@ const generateBtnEl = document.getElementById('generate-btn');
 const loadingIndicatorEl = document.getElementById('loading-indicator');
 const placeholderTextEl = document.getElementById('placeholder-text');
 const linksContainerEl = document.getElementById('links-container');
-const statusEl = document.getElementById('data-status'); // Make sure you added this to index.html
+const statusEl = document.getElementById('data-status');
 
 // --- 3. STATE VARIABLES ---
 let routineData = []; 
@@ -31,11 +31,22 @@ window.addEventListener('DOMContentLoaded', () => {
                 // SUCCESS: Data Loaded
                 routineData = result.data;
                 
-                // Populate Search
+                // --- UPDATE: SYNTHESIZE ROOT COURSES ---
                 uniqueCourses.clear();
                 routineData.forEach(item => {
-                    if (item.Course) uniqueCourses.add(item.Course);
+                    if (item.Course) {
+                        // 1. Add the specific course (e.g., CSE 317.1)
+                        uniqueCourses.add(item.Course);
+
+                        // 2. If it has a section, add the "Root" course (e.g., CSE 317)
+                        // This allows searching for the parent course
+                        if (item.Course.includes('.')) {
+                            const rootCourse = item.Course.split('.')[0];
+                            uniqueCourses.add(rootCourse);
+                        }
+                    }
                 });
+                // ---------------------------------------
 
                 // Update UI
                 const dateStr = result.updatedAt ? new Date(result.updatedAt).toLocaleDateString() : 'Unknown';
@@ -61,6 +72,7 @@ courseSearchEl.addEventListener('input', () => {
     if (query) {
         const suggestions = Array.from(uniqueCourses)
             .filter(course => course.toUpperCase().includes(query))
+            // Sort: Specific courses first, then logic
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
             .slice(0, 10) 
             .map(course => `<div class="p-2 hover:bg-gray-700 cursor-pointer" data-course="${course}">${course}</div>`)
@@ -121,6 +133,10 @@ function checkInputs() {
     }
 }
 
+// --- MAIN GENERATION LOGIC ---
+// --- MAIN GENERATION LOGIC (GROUP BY SECTION) ---
+// --- MAIN GENERATION LOGIC (HYBRID: CUSTOM + BATCH) ---
+// --- MAIN GENERATION LOGIC (SMART NAMING) ---
 function generateRoutines() {
     // UI Loading State
     placeholderTextEl.classList.add('hidden');
@@ -132,45 +148,72 @@ function generateRoutines() {
         const semesterText = semesterSelectEl.options[semesterSelectEl.selectedIndex].text;
         const department = departmentSelectEl.value;
 
-        // Group selected courses
-        const specificSelections = []; 
-        const generalSelections = [];  
+        // Bucket for Root courses (Key: Section Number, Value: Array of Rows)
+        const sectionMap = new Map();
+        
+        // Bucket for Specific selections (All mixed sections go here initially)
+        let customRoutineData = [];
 
-        selectedCourses.forEach(course => {
-            // FIX: Check if this course exists EXACTLY as-is in the data
-            // This handles "EEE 407" correctly by treating it as specific
-            const exactMatchExists = routineData.some(item => item.Course === course);
+        selectedCourses.forEach(courseStr => {
+            // CHECK: Is this a Specific Course (has dot) OR an Exact Match (e.g. EEE 407)?
+            const exactMatches = routineData.filter(r => r.Course === courseStr);
 
-            if (course.includes('.') || exactMatchExists) {
-                specificSelections.push(course);
-            } else {
-                generalSelections.push(course);
+            if (exactMatches.length > 0) {
+                // RULE 1: Specific Selections (e.g. CSE 443.3)
+                customRoutineData = customRoutineData.concat(exactMatches);
+            } 
+            else {
+                // RULE 2: Root Selections (e.g. CSE 459)
+                const childRows = routineData.filter(r => r.Course.startsWith(courseStr + '.'));
+                
+                childRows.forEach(row => {
+                    const section = row.Course.split('.')[1];
+                    if (!sectionMap.has(section)) {
+                        sectionMap.set(section, []);
+                    }
+                    sectionMap.get(section).push(row);
+                });
             }
         });
 
-        // 1. Generate combined PDF for specific selections (Includes EEE 407 now)
-        if (specificSelections.length > 0) {
-            // Determine section identifier (if mixed, use "Custom")
-            const sections = new Set(specificSelections.map(c => c.includes('.') ? c.split('.')[1] : 'Regular'));
-            const sectionIdentifier = sections.size === 1 ? sections.values().next().value : "Custom";
+        // 1. Generate the SPECIFIC SELECTION PDF
+        if (customRoutineData.length > 0) {
+            const uniqueCustomRows = [...new Set(customRoutineData)];
             
-            const routineDataSubset = routineData.filter(item => specificSelections.includes(item.Course));
-            createAndDisplayPdf(routineDataSubset, semesterText, department, sectionIdentifier);
+            // --- SMART NAMING LOGIC ---
+            // Check if all selected courses belong to the SAME section
+            const sectionsFound = new Set();
+            uniqueCustomRows.forEach(row => {
+                if (row.Course.includes('.')) {
+                    sectionsFound.add(row.Course.split('.')[1]);
+                }
+            });
+
+            let identifier = "Custom";
+            
+            // If we found exactly one unique section (e.g. everyone is Section 3), use it.
+            // If sectionsFound is empty (only EEE 407), or > 1 (mixed 1 & 5), keep "Custom".
+            if (sectionsFound.size === 1) {
+                identifier = sectionsFound.values().next().value;
+            }
+            // --------------------------
+
+            createAndDisplayPdf(uniqueCustomRows, semesterText, department, identifier);
         }
 
-        // 2. Handle generic selections (Parents looking for children, e.g. CSE 111 looking for 111.1, 111.2)
-        generalSelections.forEach(baseCourse => {
-            const matchingItems = routineData.filter(item => item.Course.startsWith(baseCourse + '.'));
-            const uniqueSections = [...new Set(matchingItems.map(item => item.Course.split('.')[1]))];
+        // 2. Generate the SECTION PDFs (for Root selections)
+        if (sectionMap.size > 0) {
+            const sortedSections = Array.from(sectionMap.keys()).sort();
 
-            uniqueSections.forEach(section => {
-                const specificCourseName = `${baseCourse}.${section}`;
-                const sectionData = routineData.filter(item => item.Course === specificCourseName);
-                createAndDisplayPdf(sectionData, semesterText, department, section);
+            sortedSections.forEach(sectionID => {
+                const rows = sectionMap.get(sectionID);
+                const uniqueRows = [...new Set(rows)];
+                createAndDisplayPdf(uniqueRows, semesterText, department, sectionID);
             });
-        });
+        }
 
-        if (!linksContainerEl.hasChildNodes()) {
+        // Error Handling
+        if (customRoutineData.length === 0 && sectionMap.size === 0) {
             linksContainerEl.innerHTML = '<p class="text-red-400 text-center">No matching classes found in data.</p>';
         }
 
@@ -178,26 +221,19 @@ function generateRoutines() {
         generateBtnEl.disabled = false;
     }, 500); 
 }
-
-// --- 7. PDF GENERATION LOGIC (PASTE YOUR LATEST VERSION HERE) ---
+// --- 7. PDF GENERATION LOGIC ---
 
 function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     if (data.length === 0) return;
 
-    // --- FIX: SORTING LOGIC UPDATE ---
     const daysOrder = { 'Saturday': 1, 'Sunday': 2, 'Monday': 3, 'Tuesday': 4, 'Wednesday': 5, 'Thursday': 6, 'Friday': 7 };
     
     data.sort((a, b) => {
-        // 1. Sort by Day First
         const dayDiff = (daysOrder[a.Day] || 99) - (daysOrder[b.Day] || 99);
         if (dayDiff !== 0) return dayDiff;
-        
-        // 2. Sort by Time Chronologically (Using the new helper)
         return getStartTimeMinutes(a.Time) - getStartTimeMinutes(b.Time);
     });
-    // ---------------------------------
 
-    // 2. Prepare Table Body with Grouping
     let lastDay = null;
     const tableBody = data.map(row => {
         const displayDay = row.Day === lastDay ? '' : row.Day;
@@ -209,11 +245,10 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
             row.Room,           
             row.FacultyAcronym, 
             row.Course,         
-            row.Type            // Hidden Column
+            row.Type            
         ];
     });
 
-    // 3. Extract Faculty
     const facultyList = new Map();
     data.forEach(item => {
         if (item.FacultyAcronym && item.FacultyFullName) {
@@ -221,7 +256,6 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
         }
     });
 
-    // --- PDF GENERATION ---
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const semesterNumber = semester.split(' ')[0];
@@ -231,7 +265,6 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     let session = (month >= 0 && month <= 3) ? "Spring" : (month >= 4 && month <= 7) ? "Summer" : "Fall";
     const year = now.getFullYear();
 
-    // Title Section
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.setTextColor(55, 65, 81); 
@@ -246,7 +279,6 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     doc.setTextColor(107, 114, 128); 
     doc.text(`Class Routine - ${session} ${year}`, 14, 38);
 
-    // 4. Generate Table
     doc.autoTable({
         head: [['DAY', 'TIME', 'ROOM', 'FACULTY', 'SUBJECT']],
         body: tableBody,
@@ -266,22 +298,18 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
             4: { halign: 'left', valign: 'middle' } 
         },
         didParseCell: function (data) {
-            // Highlight LAB classes
-            // Safety check: ensure raw row exists
             if (data.row && data.row.raw && data.row.raw[5]) {
                 const rowType = data.row.raw[5]; 
                 if (rowType === 'Lab' && data.section === 'body') {
                     data.cell.styles.fillColor = [243, 244, 246]; 
                 }
             }
-            // Clean borders for empty grouped days
             if (data.column.index === 0 && data.cell.raw === '') {
                 data.cell.styles.valign = 'middle';
             }
         }
     });
 
-    // 5. Professional 2-Column Faculty Footer
     let finalY = doc.lastAutoTable.finalY || 100;
     
     if (facultyList.size > 0) {
@@ -317,7 +345,6 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
         }
     }
 
-    // 6. Output
     const pdfBlob = doc.output('blob');
     const fileName = sectionIdentifier === 'Custom' ? 'Custom_Routine.pdf' : `Routine_Sec_${sectionIdentifier}.pdf`;
     const url = URL.createObjectURL(pdfBlob);
@@ -337,28 +364,15 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     linksContainerEl.appendChild(linkEl);
 }
 
-// Helper: Converts "1.30-3.00" or "1:30-3:00" to minutes (e.g., 810)
 function getStartTimeMinutes(timeStr) {
-    if (!timeStr) return 9999; // Put empty times at the end
-    
-    // 1. Get the start time (before the hyphen)
+    if (!timeStr) return 9999; 
     let startPart = timeStr.split('-')[0].trim(); 
-    
-    // 2. Normalize separator (replace dot with colon)
     startPart = startPart.replace('.', ':');
-    
-    // 3. Parse Hours and Minutes
     let parts = startPart.split(':');
     let hours = parseInt(parts[0], 10);
     let minutes = parseInt(parts[1] || '0', 10);
-    
-    // 4. University Logic (12-hour format adjustment)
-    // Classes usually run from 8:30 AM to 6:00 PM.
-    // If hour is 1, 2, 3, 4, 5, 6, 7 -> Add 12 to make it PM.
-    // If hour is 8, 9, 10, 11, 12 -> Leave it (AM or 12PM).
     if (hours < 8) {
         hours += 12;
     }
-    
     return (hours * 60) + minutes;
 }
