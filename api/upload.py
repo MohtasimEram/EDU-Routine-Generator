@@ -12,6 +12,7 @@ CORS(app)
 # --- CONFIGURATION ---
 FIREBASE_URL = "https://edu-routine-generator-default-rtdb.asia-southeast1.firebasedatabase.app/current_routine.json"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+FIREBASE_SECRET = os.environ.get("FIREBASE_SECRET")
 
 # ==========================================
 # --- HELPER FUNCTIONS ---
@@ -178,10 +179,13 @@ def upload_file():
         
         routine_json = df.to_dict(orient="records")
         
-        response = requests.put(FIREBASE_URL, json={
+        # Add the auth parameter securely
+        url_with_auth = f"{FIREBASE_URL}?auth={FIREBASE_SECRET}"
+        
+        response = requests.put(url_with_auth, json={
             "updatedAt": str(pd.Timestamp.now()),
             "data": routine_json,
-            "isRamadan": is_ramadan # NEW: Save status to Firebase
+            "isRamadan": is_ramadan
         })
 
         return jsonify({
