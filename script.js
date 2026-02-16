@@ -31,31 +31,39 @@ window.addEventListener('DOMContentLoaded', () => {
                 // SUCCESS: Data Loaded
                 routineData = result.data;
                 
+                // --- NEW: READ RAMADAN STATUS FROM DB ---
+                const isRamadanActive = result.isRamadan === true;
+                window.CURRENT_MODE_RAMADAN = isRamadanActive;
+                // ----------------------------------------
+
                 // --- UPDATE: SYNTHESIZE ROOT COURSES ---
                 uniqueCourses.clear();
                 routineData.forEach(item => {
                     if (item.Course) {
-                        // 1. Add the specific course (e.g., CSE 317.1)
                         uniqueCourses.add(item.Course);
-
-                        // 2. If it has a section, add the "Root" course (e.g., CSE 317)
-                        // This allows searching for the parent course
                         if (item.Course.includes('.')) {
                             const rootCourse = item.Course.split('.')[0];
                             uniqueCourses.add(rootCourse);
                         }
                     }
                 });
-                // ---------------------------------------
 
                 // Update UI
                 const dateStr = result.updatedAt ? new Date(result.updatedAt).toLocaleDateString() : 'Unknown';
-                if(statusEl) statusEl.innerHTML = `<span class="text-green-400 text-sm">● Live Routine (Updated: ${dateStr})</span>`;
+                
+                // NEW: STATUS BAR LOGIC
+                if (isRamadanActive) {
+                    if(statusEl) statusEl.innerHTML = `
+                        <span class="flex items-center gap-2 text-yellow-300 font-bold text-sm bg-yellow-900/30 px-3 py-1 rounded-full border border-yellow-500/50">
+                            🌙 Ramadan Routine Active (Updated: ${dateStr})
+                        </span>`;
+                } else {
+                    if(statusEl) statusEl.innerHTML = `<span class="text-green-400 text-sm">● Live Routine (Updated: ${dateStr})</span>`;
+                }
                 
                 courseSearchEl.disabled = false;
                 courseSearchEl.placeholder = "Type course code (e.g. CSE 317)...";
             } else {
-                // FAIL: No Data
                 if(statusEl) statusEl.innerHTML = `<span class="text-red-400 text-sm">No routine uploaded yet. Contact CR.</span>`;
             }
         })
@@ -72,7 +80,6 @@ courseSearchEl.addEventListener('input', () => {
     if (query) {
         const suggestions = Array.from(uniqueCourses)
             .filter(course => course.toUpperCase().includes(query))
-            // Sort: Specific courses first, then logic
             .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
             .slice(0, 10) 
             .map(course => `<div class="p-2 hover:bg-gray-700 cursor-pointer" data-course="${course}">${course}</div>`)
@@ -134,14 +141,7 @@ function checkInputs() {
 }
 
 // --- MAIN GENERATION LOGIC ---
-// --- MAIN GENERATION LOGIC (GROUP BY SECTION) ---
-// --- MAIN GENERATION LOGIC (HYBRID: CUSTOM + BATCH) ---
-// --- MAIN GENERATION LOGIC (SMART NAMING) ---
-// --- MAIN GENERATION LOGIC (SMART SORTING & GROUPING) ---
-// --- MAIN GENERATION LOGIC (SMART HEADERS) ---
-// --- MAIN GENERATION LOGIC (AUTO-MERGE & SMART HEADERS) ---
 function generateRoutines() {
-    // UI Loading State
     placeholderTextEl.classList.add('hidden');
     linksContainerEl.innerHTML = '';
     loadingIndicatorEl.classList.remove('hidden');
@@ -151,19 +151,16 @@ function generateRoutines() {
         const semesterText = semesterSelectEl.options[semesterSelectEl.selectedIndex].text;
         const department = departmentSelectEl.value;
 
-        // 1. Gather Data into Buckets
-        const sectionMap = new Map();   // Key: "1", "2" -> Value: [Rows]
-        let customRoutineData = [];     // Mixed/Specific selections
+        const sectionMap = new Map();   
+        let customRoutineData = [];     
 
         selectedCourses.forEach(courseStr => {
-            // CHECK: Exact Match (Specific Section or EEE 407)
             const exactMatches = routineData.filter(r => r.Course === courseStr);
 
             if (exactMatches.length > 0) {
                 customRoutineData = customRoutineData.concat(exactMatches);
             } 
             else {
-                // Root Course (CSE 459) -> Add children to Section Buckets
                 const childRows = routineData.filter(r => r.Course.startsWith(courseStr + '.'));
                 
                 childRows.forEach(row => {
@@ -176,9 +173,7 @@ function generateRoutines() {
             }
         });
 
-        // --- NEW: AUTO-MERGE LOGIC ---
-        // If the 'Custom' data actually belongs to a single section (e.g. all Section 3),
-        // move it into the main sectionMap so it merges with the Batch data.
+        // AUTO-MERGE LOGIC
         if (customRoutineData.length > 0) {
             const uniqueCustomRows = [...new Set(customRoutineData)];
             const sectionsFound = new Set();
@@ -189,26 +184,18 @@ function generateRoutines() {
                 }
             });
 
-            // If ALL specific selections belong to ONE section (e.g. "3")
             if (sectionsFound.size === 1) {
                 const targetSection = sectionsFound.values().next().value;
-                
-                // Merge into existing bucket or create new one
                 if (!sectionMap.has(targetSection)) {
                     sectionMap.set(targetSection, []);
                 }
                 sectionMap.get(targetSection).push(...uniqueCustomRows);
-                
-                // Clear custom bucket so it doesn't render twice
                 customRoutineData = [];
             }
         }
-        // -----------------------------
 
-        // 2. Prepare Render List
         let routinesToRender = [];
 
-        // A. Process Custom Routine (Only if it wasn't merged above)
         if (customRoutineData.length > 0) {
             const uniqueRows = [...new Set(customRoutineData)];
             routinesToRender.push({
@@ -219,7 +206,6 @@ function generateRoutines() {
             });
         }
 
-        // B. Process Section Routines
         sectionMap.forEach((rows, sectionID) => {
             const uniqueRows = [...new Set(rows)];
             routinesToRender.push({
@@ -230,7 +216,6 @@ function generateRoutines() {
             });
         });
 
-        // 3. Sorting & Grouping
         if (routinesToRender.length > 0) {
             const maxCourseCount = Math.max(...routinesToRender.map(r => r.count));
             const threshold = maxCourseCount > 1 ? (maxCourseCount - 1) : 1;
@@ -238,16 +223,13 @@ function generateRoutines() {
             const primaryRoutines = routinesToRender.filter(r => r.count >= threshold);
             const secondaryRoutines = routinesToRender.filter(r => r.count < threshold);
 
-            // Sort
             primaryRoutines.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
             secondaryRoutines.sort((a, b) => b.count - a.count || a.id.localeCompare(b.id, undefined, { numeric: true }));
 
-            // Headers Logic
-            const isBatchGen = sectionMap.size > 0; // Merged data counts as batch now
+            const isBatchGen = sectionMap.size > 0;
             const hasSplit = secondaryRoutines.length > 0;
             const showHeaders = isBatchGen && hasSplit;
 
-            // 4. Render
             if (primaryRoutines.length > 0) {
                 if (showHeaders) {
                     const mainHeader = document.createElement('div');
@@ -280,6 +262,7 @@ function generateRoutines() {
         generateBtnEl.disabled = false;
     }, 500); 
 }
+
 // --- 7. PDF GENERATION LOGIC ---
 
 function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
@@ -336,7 +319,13 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     
     doc.setFontSize(11);
     doc.setTextColor(107, 114, 128); 
-    doc.text(`Class Routine - ${session} ${year}`, 14, 38);
+    
+    // NEW: USE GLOBAL RAMADAN VARIABLE FOR TITLE
+    const routineTitle = window.CURRENT_MODE_RAMADAN 
+        ? `Ramadan Routine - ${session} ${year}` 
+        : `Class Routine - ${session} ${year}`;
+        
+    doc.text(routineTitle, 14, 38);
 
     doc.autoTable({
         head: [['DAY', 'TIME', 'ROOM', 'FACULTY', 'SUBJECT']],
@@ -405,13 +394,19 @@ function createAndDisplayPdf(data, semester, department, sectionIdentifier) {
     }
 
     const pdfBlob = doc.output('blob');
-    const fileName = sectionIdentifier === 'Custom' ? 'Custom_Routine.pdf' : `Routine_Sec_${sectionIdentifier}.pdf`;
+    let fileName = 'Generated_Routine.pdf';
+    if (sectionIdentifier !== 'Combined_View' && sectionIdentifier !== 'Custom') {
+        fileName = `Routine_Sec_${sectionIdentifier}.pdf`;
+    } else {
+        fileName = `Combined_Routine.pdf`;
+    }
+
     const url = URL.createObjectURL(pdfBlob);
 
     const linkEl = document.createElement('a');
     linkEl.href = url;
     linkEl.download = fileName;
-    linkEl.className = 'download-link block bg-gray-700 p-3 rounded-lg hover:bg-indigo-500 text-white no-underline';
+    linkEl.className = 'download-link block bg-gray-700 p-3 rounded-lg hover:bg-indigo-500 text-white no-underline mb-2';
     linkEl.innerHTML = `
         <div class="flex justify-between items-center">
             <span>${fileName}</span>

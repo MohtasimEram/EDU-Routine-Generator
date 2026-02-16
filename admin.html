@@ -15,6 +15,13 @@
         <label class="text-xs text-gray-400 uppercase">Routine File (.docx)</label>
         <input type="file" id="fileInput" accept=".docx" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white cursor-pointer mb-6">
         
+        <div class="mb-4 flex items-center justify-center gap-2">
+            <input type="checkbox" id="ramadan-mode" class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300">
+            <label for="ramadan-mode" class="text-gray-300 font-medium cursor-pointer select-none">
+                Enable Ramadan Mode 🌙
+            </label>
+        </div>
+
         <button onclick="uploadRoutine()" id="uploadBtn" class="w-full bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 text-white font-bold py-2 px-4 rounded transition">
             Upload & Update
         </button>
@@ -24,10 +31,12 @@
 
     <script>
         async function uploadRoutine() {
-            const password = document.getElementById('password').value; // Get what user typed
+            const password = document.getElementById('password').value; 
             const fileInput = document.getElementById('fileInput');
             const status = document.getElementById('status');
             const btn = document.getElementById('uploadBtn');
+            // NEW: Get checkbox status
+            const isRamadan = document.getElementById('ramadan-mode').checked;
 
             if (!password) { alert("Enter a password!"); return; }
             if (fileInput.files.length === 0) { alert("Select a file!"); return; }
@@ -38,7 +47,8 @@
 
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
-            formData.append('password', password); // Send password to server
+            formData.append('password', password); 
+            formData.append('isRamadan', isRamadan); // Send status to server
 
             try {
                 const response = await fetch('/api/upload', {
@@ -51,7 +61,6 @@
                     status.innerHTML = `<span class="text-green-400 font-bold">Success! Routine Updated.</span>`;
                     btn.textContent = "Done";
                 } else {
-                    // This handles "Wrong Password" errors safely
                     throw new Error(result.error || "Upload failed");
                 }
             } catch (error) {

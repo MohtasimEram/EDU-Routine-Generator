@@ -10,7 +10,6 @@ app = Flask(__name__)
 CORS(app)
 
 # --- CONFIGURATION ---
-# REMEMBER: Switch to /current_routine.json before final deployment!
 FIREBASE_URL = "https://edu-routine-generator-default-rtdb.asia-southeast1.firebasedatabase.app/current_routine.json"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
@@ -19,9 +18,6 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 # ==========================================
 
 def is_time_slot(text):
-    """
-    Returns True if the text looks like a time range (8.30-10.00).
-    """
     clean_text = text.replace(' ', '').replace('\n', '')
     return bool(re.search(r'\d{1,2}[\.:]\d{2}[-–—]\d{1,2}[\.:]\d{2}', clean_text))
 
@@ -59,10 +55,7 @@ def parse_routine_complete(doc):
     data = []
     faculty_map = get_faculty_mapping(doc)
     
-    # Regex Patterns
     course_pattern = re.compile(r"([A-Z]{2,4}\s*\d{3}(?:\.[0-9A-Za-z]+)?)", re.IGNORECASE)
-    # New: Regex to capture specific times inside cells (e.g. 1.30-3.30 or 1:30 - 3:30)
-    # Capture group 1 is the time string
     custom_time_pattern = re.compile(r"\(?(\d{1,2}[\.:]\d{2}\s*[-–—]\s*\d{1,2}[\.:]\d{2})\)?")
 
     valid_days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
@@ -72,12 +65,10 @@ def parse_routine_complete(doc):
         rows = table.rows
         if not rows: continue
         
-        # Check Day at top of table
         top_cell = rows[0].cells[0].text.strip()
         if top_cell in valid_days:
             current_day = top_cell
         
-        # Find Header Row
         header_row_index = -1
         time_slots = []
         
@@ -96,7 +87,6 @@ def parse_routine_complete(doc):
         if header_row_index == -1:
             continue
 
-        # Parse Rows
         for row in rows[header_row_index+1:]:
             cells = row.cells
             if not cells: continue
@@ -110,7 +100,6 @@ def parse_routine_complete(doc):
             if not current_day:
                 continue
 
-            # Check for Room Number
             if first_cell_text.isdigit() or first_cell_text.startswith('N'):
                 room = first_cell_text
                 
@@ -119,45 +108,28 @@ def parse_routine_complete(doc):
                         raw_text = cells[slot['index']].text.strip()
                         if not raw_text: continue
                         
-                        # Use a working copy of text for cleaning
                         processing_text = raw_text.replace('\n', ' ')
                         
-                        # --- 1. DETECT CUSTOM TIME OVERRIDE ---
                         final_time = slot['time']
                         
-                        # Check if cell contains a specific time (e.g., "(1.30-3.30)")
                         time_match = custom_time_pattern.search(processing_text)
                         if time_match:
-                            # Use the found time (e.g. "1.30-3.30")
-                            final_time = time_match.group(1).replace(' ', '') # Normalize spaces
-                            # Remove the time string (and surrounding parens) from text so it's not treated as Faculty
-                            # We replace the FULL match (including parens if regex caught them)
+                            final_time = time_match.group(1).replace(' ', '')
                             processing_text = processing_text.replace(time_match.group(0), '')
 
-                        # --- 2. EXTRACT COURSE ---
                         course_match = course_pattern.search(processing_text)
                         
                         if course_match:
                             course_code = course_match.group(1).strip()
                             
-                            # --- 3. EXTRACT FACULTY (CLEANING STRATEGY) ---
-                            # Remove Course Code
                             remaining = processing_text.replace(course_code, '')
-                            
-                            # Remove "(EEE)" or "(CSE)" noise
                             remaining = re.sub(r'\([A-Z]{3}\)', '', remaining)
-                            
-                            # Remove empty parentheses "()"
                             remaining = remaining.replace('()', '')
-                            
-                            # Clean up commas, spaces, dashes
                             faculty_acronym = remaining.strip(' ,-–—')
                             
-                            # Final sanity check: Faculty shouldn't be too long
                             if len(faculty_acronym) > 15:
-                                faculty_acronym = "" # Logic failed, safer to show nothing than garbage
+                                faculty_acronym = ""
 
-                            # Determine Type
                             header_text_full = " ".join([c.text.lower() for c in rows[header_row_index].cells])
                             prev_row_text = rows[max(0, header_row_index-1)].cells[0].text.lower() if header_row_index > 0 else ""
                             
@@ -167,7 +139,7 @@ def parse_routine_complete(doc):
 
                             data.append({
                                 "Day": current_day,
-                                "Time": final_time, # Uses override if found
+                                "Time": final_time,
                                 "Room": room,
                                 "Course": course_code,
                                 "FacultyAcronym": faculty_acronym,
@@ -198,6 +170,9 @@ def upload_file():
         if file.filename == '':
             return jsonify({"error": "No selected file"}), 400
 
+        # NEW: Get Ramadan Status from Form
+        is_ramadan = request.form.get('isRamadan') == 'true'
+
         doc = Document(file.stream)
         df = parse_routine_complete(doc)
         
@@ -205,7 +180,8 @@ def upload_file():
         
         response = requests.put(FIREBASE_URL, json={
             "updatedAt": str(pd.Timestamp.now()),
-            "data": routine_json
+            "data": routine_json,
+            "isRamadan": is_ramadan # NEW: Save status to Firebase
         })
 
         return jsonify({
