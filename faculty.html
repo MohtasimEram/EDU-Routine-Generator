@@ -4,15 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EDU Routine Generator — East Delta University</title>
-    <meta name="description"
-        content="Generate individual section routines from the master schedule of East Delta University.">
+    <title>Faculty Search — EDU Routine Generator</title>
+    <meta name="description" content="Search for East Delta University faculty members by acronym or name.">
 
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
-    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
-    <script src="https://unpkg.com/jspdf-autotable@3.5.23/dist/jspdf.plugin.autotable.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -52,106 +49,45 @@
             </a>
             <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle menu">☰</button>
             <ul class="navbar-links" id="navbar-links">
-                <li><a href="index.html" class="active">Home</a></li>
-                <li><a href="faculty.html">Faculty Search</a></li>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="faculty.html" class="active">Faculty Search</a></li>
             </ul>
         </div>
     </nav>
 
     <!-- Page Header -->
     <header class="page-header">
-        <h1>EDU Routine Generator</h1>
-        <p>Generate individual section routines from the master schedule of East Delta University.</p>
+        <h1>Faculty Search</h1>
+        <p>Type a short acronym or part of a faculty name to find the full name.</p>
     </header>
 
     <!-- Main Content -->
-    <div class="content-container">
-        <div class="glass-card">
-            <div class="glass-card-body">
-                <div class="main-grid">
-                    <!-- Left: Form -->
-                    <div>
-                        <!-- Status Badge -->
-                        <div style="margin-bottom: 1.5rem;">
-                            <div id="data-status" class="status-badge loading">
-                                <span class="status-dot"></span>
-                                <span>Connecting to database...</span>
-                            </div>
-                        </div>
+    <div class="faculty-search-wrapper">
 
-                        <!-- Step 1: Course Search -->
-                        <div class="form-group">
-                            <label for="course-search" class="form-label">
-                                <span class="step-number">1</span>
-                                Search Courses
-                            </label>
-                            <div class="course-search-container">
-                                <input type="text" id="course-search" class="form-input"
-                                    placeholder="Type course code (e.g. CSE 317)..." disabled>
-                                <div id="course-suggestions"></div>
-                            </div>
-                            <div id="selected-courses" class="selected-courses" style="margin-top: 0.5rem;"></div>
-                        </div>
+        <!-- Status -->
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <div id="faculty-status" class="status-badge loading">
+                <span class="status-dot"></span>
+                <span>Loading faculty data...</span>
+            </div>
+        </div>
 
-                        <!-- Step 2: Semester -->
-                        <div class="form-group">
-                            <label for="semester-select" class="form-label">
-                                <span class="step-number">2</span>
-                                Select Semester
-                            </label>
-                            <div class="custom-select-wrapper">
-                                <select id="semester-select" class="form-select">
-                                    <option selected disabled>Choose a semester</option>
-                                    <option value="1">1st Semester</option>
-                                    <option value="2">2nd Semester</option>
-                                    <option value="3">3rd Semester</option>
-                                    <option value="4">4th Semester</option>
-                                    <option value="5">5th Semester</option>
-                                    <option value="6">6th Semester</option>
-                                    <option value="7">7th Semester</option>
-                                    <option value="8">8th Semester</option>
-                                    <option value="9">9th Semester</option>
-                                    <option value="10">10th Semester</option>
-                                    <option value="11">11th Semester</option>
-                                    <option value="12">12th Semester</option>
-                                </select>
-                            </div>
-                        </div>
+        <!-- Search Bar -->
+        <div class="search-bar-container">
+            <input type="text" id="faculty-search-input" placeholder="Search by acronym or name (e.g. MR, Rahman)..."
+                disabled>
+            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+        </div>
 
-                        <!-- Step 3: Department -->
-                        <div class="form-group">
-                            <label for="department-select" class="form-label">
-                                <span class="step-number">3</span>
-                                Select Department
-                            </label>
-                            <div class="custom-select-wrapper">
-                                <select id="department-select" class="form-select">
-                                    <option selected disabled>Choose a department</option>
-                                    <option value="CSE">CSE — Computer Science & Engineering</option>
-                                    <option value="EEE">EEE — Electrical & Electronic Engineering</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Generate Button -->
-                        <button id="generate-btn" class="btn-generate" disabled>
-                            Generate Routine
-                        </button>
-                    </div>
-
-                    <!-- Right: Results -->
-                    <div class="results-section">
-                        <h3>Generated Routine</h3>
-                        <div id="results-container" class="results-box">
-                            <div id="loading-indicator" class="spinner-container hidden">
-                                <div class="spinner"></div>
-                                <p>Generating your routine...</p>
-                            </div>
-                            <p id="placeholder-text">Your PDF download links will appear here.</p>
-                            <div id="links-container"></div>
-                        </div>
-                    </div>
-                </div>
+        <!-- Results -->
+        <div class="faculty-results" id="faculty-results">
+            <div class="faculty-empty" id="faculty-empty">
+                <div class="empty-icon">🔍</div>
+                <p>Start typing to search for faculty members</p>
             </div>
         </div>
     </div>
@@ -168,7 +104,7 @@
                         d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                 </svg>
             </a>
-            <a href="https://instagram.com/mohtasim.eram_" target="_blank" rel="noopener noreferrer"
+            <a href="https://instagram.com/mohtasimeram" target="_blank" rel="noopener noreferrer"
                 aria-label="Instagram">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path
@@ -185,7 +121,7 @@
         <p class="copyright">&copy; 2025 EDU Routine Generator. All Rights Reserved.</p>
     </footer>
 
-    <script src="script.js"></script>
+    <script src="faculty.js"></script>
 </body>
 
 </html>
