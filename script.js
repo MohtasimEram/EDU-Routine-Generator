@@ -79,7 +79,17 @@ class CustomSelect {
             item.className = 'custom-select-option';
             item.setAttribute('role', 'option');
             item.setAttribute('data-value', opt.value);
-            item.textContent = opt.textContent;
+
+            // Check if this is a department-style option (e.g. "CSE — Computer Science & Engineering")
+            const text = opt.textContent;
+            if (text.includes(' — ')) {
+                const [abbr, fullName] = text.split(' — ');
+                item.classList.add('dept-option');
+                item.innerHTML = `<span class="dept-badge">${abbr.trim()}</span><span class="dept-name">${fullName.trim()}</span>`;
+            } else {
+                item.textContent = text;
+            }
+
             this.dropdown.appendChild(item);
             this.options.push(item);
         });
@@ -175,10 +185,12 @@ class CustomSelect {
 
     selectOption(optionEl) {
         const value = optionEl.getAttribute('data-value');
-        const text = optionEl.textContent;
+
+        // For department options, show just the abbreviation
+        const displayText = optionEl.classList.contains('dept-option') ? value : optionEl.textContent;
 
         // Update trigger text
-        this.trigger.textContent = text;
+        this.trigger.textContent = displayText;
         this.trigger.classList.add('has-value');
 
         // Update selected class
